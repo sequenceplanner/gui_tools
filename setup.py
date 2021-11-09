@@ -29,6 +29,7 @@ setup(
         "console_scripts": [
             "control_gui = gui_tools.control_gui:main",
             "query_gui = gui_tools.query_gui:main",
+            "marker_gui = gui_tools.marker_gui:main",
         ],
     },
 )

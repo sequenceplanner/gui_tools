@@ -1,6 +1,7 @@
 import sys
 import json
 import rclpy
+import random
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import Transform
@@ -22,6 +23,7 @@ class Callbacks:
     parent_id = ""
     child_id = ""
     mesh_path = ""
+    scale = "1.0"
     frames = []
 
     trigger_refresh = None
@@ -73,13 +75,16 @@ class Ros2Node(Node, Callbacks):
         elif Callbacks.type_ == "cylinder":
             self.request.primitive_type = 3
         else:
-            self.request.primitive_type = 666
+            self.request.primitive_type = 0
         self.request.transformation = Transform()
         self.request.color.a = 1.0
-        self.request.color.r = 1.0
-        self.request.scale.x = 0.1
-        self.request.scale.y = 0.1
-        self.request.scale.z = 0.1
+        self.request.color.r = random.uniform(0.3, 0.9)
+        self.request.color.g = random.uniform(0.3, 0.9)
+        self.request.color.b = random.uniform(0.3, 0.9)
+        self.request.scale.x = float(Callbacks.scale)
+        self.request.scale.y = float(Callbacks.scale)
+        self.request.scale.z = float(Callbacks.scale)
+        self.request.absolute_mesh_path = Callbacks.mesh_path
         self.manipulate(self.request)
 
     def trigger_remove_marker(self):
@@ -142,6 +147,10 @@ class Window(QWidget, Callbacks):
 
         line_edit_label_2 = QLabel("mesh_path")
 
+        line_edit_3 = QLineEdit("1.0")
+
+        line_edit_label_3 = QLabel("scale")
+
         combo_1_box_button = QPushButton("refresh")
         combo_1_box_button.setMaximumWidth(280)
         combo_2_box_button = QPushButton("update")
@@ -163,6 +172,8 @@ class Window(QWidget, Callbacks):
         combo_box_layout.addWidget(combo_4_box_button, 3, 2)
         combo_box_layout.addWidget(line_edit_label_2, 3, 0)
         combo_box_layout.addWidget(line_edit_2, 3, 1)
+        combo_box_layout.addWidget(line_edit_label_3, 4, 0)
+        combo_box_layout.addWidget(line_edit_3, 4, 1)
         combo_box.setLayout(combo_box_layout)
 
         def combo_1_box_button_clicked():
@@ -177,6 +188,7 @@ class Window(QWidget, Callbacks):
             Callbacks.parent_id = combo_2.currentText()
             Callbacks.type_ = combo_3.currentText()
             Callbacks.mesh_path = line_edit_2.text()
+            Callbacks.scale = line_edit_3.text()
             Callbacks.trigger_update_marker()
 
         combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
@@ -186,6 +198,7 @@ class Window(QWidget, Callbacks):
             Callbacks.parent_id = combo_2.currentText()
             Callbacks.type_ = combo_3.currentText()
             Callbacks.mesh_path = line_edit_2.text()
+            Callbacks.scale = line_edit_3.text()
             Callbacks.trigger_remove_marker()
 
         combo_3_box_button.clicked.connect(combo_3_box_button_clicked)
@@ -195,6 +208,7 @@ class Window(QWidget, Callbacks):
             Callbacks.parent_id = combo_2.currentText()
             Callbacks.type_ = combo_3.currentText()
             Callbacks.mesh_path = line_edit_2.text()
+            Callbacks.scale = line_edit_3.text()
             Callbacks.trigger_clear()
 
         combo_4_box_button.clicked.connect(combo_4_box_button_clicked)

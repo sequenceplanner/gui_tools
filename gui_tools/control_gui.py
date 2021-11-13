@@ -3,11 +3,10 @@ import rclpy
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
-from ur_script_generator_msgs.srv import GenerateURScript
+from ur_tools_msgs.action import URScriptControl
 import threading
 import yaml
 from rclpy.action import ActionClient
-from ur_script_msgs.action import ExecuteScript
 
 import rclpy
 from rclpy.node import Node
@@ -38,8 +37,6 @@ class Ros2Node(Node, Callbacks):
         Node.__init__(self, "control_gui")
         Callbacks.__init__(self)
 
-        self.action_future = None
-
         Callbacks.trigger_refresh = self.trigger_refresh
         Callbacks.trigger_move_robot = self.trigger_move_robot
         Callbacks.trigger_stop_robot = self.trigger_stop_robot
@@ -62,11 +59,11 @@ class Ros2Node(Node, Callbacks):
             self.get_parameter("scenario").get_parameter_value().string_value
         )
 
-        self.ursg_client = self.create_client(GenerateURScript, "ur_script_generator")
-        self.ursg_request = GenerateURScript.Request()
-
-        while not self.ursg_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn("UR Script Generator Service not available, waiting again...")
+        self._ur_control_client = ActionClient(self, URScriptControl, "ur_script_controller")
+        self.get_logger().warn("UR Script Controller Server not available, wait...")
+        self._ur_control_client.wait_for_server()
+        self.get_logger().info("UR Script Controller Server online.")
+        self.get_logger().info("Control GUI node started.")
 
     def trigger_refresh(self):
         yaml_file = yaml.safe_load(self.tf_buffer.all_frames_as_yaml())
@@ -75,45 +72,37 @@ class Ros2Node(Node, Callbacks):
             Callbacks.frames.append(i)
         Callbacks.frames.sort()
 
+    def feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self.get_logger().info('Received feedback: {0}'.format(feedback.partial_sequence))
+
     def trigger_move_robot(self):
-        self.ursg_request.command = Callbacks.command
-        self.ursg_request.acceleration = float(Callbacks.acceleration)
-        self.ursg_request.velocity = float(Callbacks.velocity)
-        self.ursg_request.tcp_name = Callbacks.with_tcp
-        self.ursg_request.goal_feature_name = Callbacks.to_target
-        self.generate_and_send_ur_script(self.ursg_request)
+        request = URScriptControl.Goal()
+        request.command = Callbacks.command
+        request.acceleration = float(Callbacks.acceleration)
+        request.velocity = float(Callbacks.velocity)
+        request.tcp_name = Callbacks.with_tcp
+        request.goal_feature_name = Callbacks.to_target
+        self.generate_and_send_ur_script(request)
 
     def generate_and_send_ur_script(self, request):
-        ursg_future = self.ursg_client.call_async(request)
-        while 1:
-            if ursg_future.done():
-                try:
-                    response = ursg_future.result()
-                except Exception as e:
-                    self.get_logger().error(
-                        "UR Script Generator service call failed %r" % (e,)
-                    )
-                else:
-                    ursg_response = response.script
-                    self.get_logger().info(
-                        "Result of generate_ur_script: %s" % ursg_response
-                    )
-                    if response.success:
-                        self.action_client = ActionClient(self, ExecuteScript, "ur_script")
+        self._send_goal_future = self._ur_control_client.send_goal_async(request)
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
 
-                        def send_goal(script):
-                            goal_msg = ExecuteScript.Goal()
-                            goal_msg.script = script
-                            self.action_client.wait_for_server()
-                            self.action_future = self.action_client.send_goal_async(
-                                goal_msg
-                            )
-                        send_goal(ursg_response)
-                    else:
-                        self.get_logger().error(
-                        "Gui did not send a move command command, UR script did not generate."
-                    )
-                break
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().warn('UR Script Controller rejected the goal.')
+            return
+
+        self.get_logger().info('UR Script Controller accepted the goal.')
+
+        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future.add_done_callback(self.get_result_callback)
+
+    def get_result_callback(self, future):
+        result = future.result().result
+        self.get_logger().info('Result from UR Script Controller: {0}'.format(result.success))
 
     def trigger_lock_scene(self):
         self.lock_client.call_async(self.lock_request)

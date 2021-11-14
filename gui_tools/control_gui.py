@@ -1,5 +1,7 @@
 import sys
 import rclpy
+from rclpy.client import Client
+from rclpy.service import Service
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
@@ -7,6 +9,9 @@ from ur_tools_msgs.action import URScriptControl
 import threading
 import yaml
 from rclpy.action import ActionClient
+from action_msgs.srv import CancelGoal
+from ur_script_msgs.srv import DashboardCommand
+from rclpy.executors import MultiThreadedExecutor
 
 import rclpy
 from rclpy.node import Node
@@ -30,7 +35,35 @@ class Callbacks:
     trigger_refresh = None
     trigger_move_robot = None
     trigger_stop_robot = None
+    trigger_stop = None
 
+class Ros2ActionNode(Node, Callbacks):
+    def __init__(self):
+        Node.__init__(self, "control_gui_action")
+        Callbacks.__init__(self)
+
+        Callbacks.trigger_move_robot = self.trigger_move_robot
+        # Callbacks.trigger_stop = self.trigger_stop
+
+        self._ur_control_client = ActionClient(self, URScriptControl, "ur_script_controller")
+        self.get_logger().warn("UR Script Controller Server not available, wait...")
+        self._ur_control_client.wait_for_server()
+        self.get_logger().info("UR Script Controller Server online.")
+
+    def trigger_move_robot(self):
+        request = URScriptControl.Goal()
+        request.command = Callbacks.command
+        request.acceleration = float(Callbacks.acceleration)
+        request.velocity = float(Callbacks.velocity)
+        request.tcp_name = Callbacks.with_tcp
+        request.goal_feature_name = Callbacks.to_target
+        self.generate_and_send_ur_script(request)
+
+    def generate_and_send_ur_script(self, request):
+        self._send_goal_future = self._ur_control_client.send_goal_async(request)
+
+    # def trigger_stop(self):
+    #     self._send_goal_future.cancel()
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -38,9 +71,8 @@ class Ros2Node(Node, Callbacks):
         Callbacks.__init__(self)
 
         Callbacks.trigger_refresh = self.trigger_refresh
-        Callbacks.trigger_move_robot = self.trigger_move_robot
         Callbacks.trigger_stop_robot = self.trigger_stop_robot
-        Callbacks.trigger_lock_scene = self.trigger_lock_scene
+        Callbacks.trigger_stop = self.trigger_stop
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -59,10 +91,11 @@ class Ros2Node(Node, Callbacks):
             self.get_parameter("scenario").get_parameter_value().string_value
         )
 
-        self._ur_control_client = ActionClient(self, URScriptControl, "ur_script_controller")
-        self.get_logger().warn("UR Script Controller Server not available, wait...")
-        self._ur_control_client.wait_for_server()
-        self.get_logger().info("UR Script Controller Server online.")
+        self._cancel_goal_client = self.create_client(DashboardCommand, "dashboard_command")
+        self.get_logger().warn("Dashboard Control Server not available, wait...")
+        self._cancel_goal_client.wait_for_service()
+        self.get_logger().info("Dashboard Control Server online.")
+
         self.get_logger().info("Control GUI node started.")
 
     def trigger_refresh(self):
@@ -72,51 +105,23 @@ class Ros2Node(Node, Callbacks):
             Callbacks.frames.append(i)
         Callbacks.frames.sort()
 
-    def feedback_callback(self, feedback_msg):
-        feedback = feedback_msg.feedback
-        self.get_logger().info('Received feedback: {0}'.format(feedback.partial_sequence))
-
-    def trigger_move_robot(self):
-        request = URScriptControl.Goal()
-        request.command = Callbacks.command
-        request.acceleration = float(Callbacks.acceleration)
-        request.velocity = float(Callbacks.velocity)
-        request.tcp_name = Callbacks.with_tcp
-        request.goal_feature_name = Callbacks.to_target
-        self.generate_and_send_ur_script(request)
-
-    def generate_and_send_ur_script(self, request):
-        self._send_goal_future = self._ur_control_client.send_goal_async(request)
-        self._send_goal_future.add_done_callback(self.goal_response_callback)
-
-    def goal_response_callback(self, future):
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().warn('UR Script Controller rejected the goal.')
-            return
-
-        self.get_logger().info('UR Script Controller accepted the goal.')
-
-        self._get_result_future = goal_handle.get_result_async()
-        self._get_result_future.add_done_callback(self.get_result_callback)
-
-    def get_result_callback(self, future):
-        result = future.result().result
-        self.get_logger().info('Result from UR Script Controller: {0}'.format(result.success))
-
-    def trigger_lock_scene(self):
-        self.lock_client.call_async(self.lock_request)
-
-    def trigger_stop_robot(self):
-        if self.action_future != None:
-            self.get_logger().info("future is not none")
-            if self.action_future.done():
-                self.get_logger().info("future is done")
-                self.action_future.result().cancel_goal()
-            else:
-                pass
-        else:
-            pass
+    def trigger_stop(self):
+        request = DashboardCommand.Request()
+        request.cmd = "stop"
+        future = self._cancel_goal_client.call_async(request)
+        self.get_logger().info(f"Request to stop program execution sent.")
+        while rclpy.ok():
+            rclpy.spin_once(self)
+            if future.done():
+                try:
+                    response = future.result()
+                except Exception as e:
+                    self.get_logger().error(f"Stop program execution call failed with: {(e,)}")
+                else:
+                    self.get_logger().info(f"Stop program execution call succeeded with: {response}")
+                finally:
+                    self.get_logger().info(f"Stop program execution call completed.")
+                break
 
 
 class Window(QWidget, Callbacks):
@@ -195,8 +200,8 @@ class Window(QWidget, Callbacks):
         combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
 
         def combo_3_box_button_clicked():
-            Callbacks.trigger_stop_robot()
-            self.output.append(Callbacks.information)
+            Callbacks.trigger_stop()
+            # self.output.append(Callbacks.information)
 
         combo_3_box_button.clicked.connect(combo_3_box_button_clicked)
 
@@ -204,13 +209,33 @@ class Window(QWidget, Callbacks):
 
 
 def main(args=None):
+    rclpy.init(args=args)
     def launch_node():
         def launch_node_callback_local():
-            rclpy.init(args=args)
-            node = Ros2Node()
-            rclpy.spin(node)
-            node.destroy_node()
-            rclpy.shutdown()
+            try:
+                n1 = Ros2Node()
+                n2 = Ros2ActionNode()
+
+                executor = MultiThreadedExecutor()
+                executor.add_node(n1)
+                executor.add_node(n2)
+
+                try:
+                    executor.spin()
+                finally:
+                    executor.shutdown()
+                    n1.destroy_node()
+                    n2.destroy_node()
+            finally:
+                rclpy.shutdown()
+
+
+            # try:
+            #     rclpy.init(args=args)
+            #     node = Ros2Node()
+            #     rclpy.spin(node)
+            #     node.destroy_node()
+            #     rclpy.shutdown()
 
         t = threading.Thread(target=launch_node_callback_local)
         t.daemon = True

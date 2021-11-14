@@ -149,7 +149,7 @@ class Window(QWidget, Callbacks):
         combo_1 = QComboBox()
         combo_2 = QComboBox()
         combo_3 = QComboBox()
-        combo_3.addItems(["move_j", "move_l"])
+        combo_3.addItems(["move_j", "move_l", "safe_move_j"])
 
         line_edit_1 = QLineEdit("0.1")
         line_edit_2 = QLineEdit("0.1")

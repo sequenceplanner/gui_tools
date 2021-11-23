@@ -5,6 +5,7 @@ import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
 from tf_tools_msgs.srv import LookupTransform
+from sensor_msgs.msg import JointState
 
 import threading
 import yaml
@@ -23,6 +24,7 @@ class Callbacks:
     parent = ""
     child = ""
     frames = []
+    joints = JointState()
 
     trigger_refresh = None
     trigger_query = None
@@ -62,9 +64,18 @@ class Ros2Node(Node, Callbacks):
 
         while not self.tf_lookup_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn("TF Lookup Service not available, waiting again...")
-        
+
+        self.jsub = self.create_subscription(
+            JointState,
+            '/joint_states',
+            self.jsub_callback,
+            10)
+    
         self.get_logger().info("Query gui up and running.")
 
+    def jsub_callback(self, msg):
+        Callbacks.joints = msg
+        
     def trigger_refresh(self):
         yaml_file = yaml.safe_load(self.tf_buffer.all_frames_as_yaml())
         Callbacks.frames.clear()
@@ -170,7 +181,36 @@ class Window(QWidget, Callbacks):
             Callbacks.parent = combo_1.currentText()
             Callbacks.child = combo_2.currentText()
             Callbacks.trigger_query()
-            self.output.append(json.dumps(str(Callbacks.transform)))
+            self.output.append("{")
+            self.output.append("    \"show\": true,")
+            self.output.append("    \"active\": false,")
+            self.output.append(f"    \"child_frame\": \"{Callbacks.child}\",")
+            self.output.append(f"    \"parent_frame\": \"{Callbacks.parent}\",")
+            self.output.append("    \"transform\": {")
+            self.output.append("        \"translation\": {")
+            self.output.append(f"            \"x\": {Callbacks.transform.transform.translation.x},")
+            self.output.append(f"            \"y\": {Callbacks.transform.transform.translation.y},")
+            self.output.append(f"            \"z\": {Callbacks.transform.transform.translation.z}")
+            self.output.append("        },")
+            self.output.append("        \"rotation\": {")
+            self.output.append(f"            \"x\": {Callbacks.transform.transform.rotation.x},")
+            self.output.append(f"            \"y\": {Callbacks.transform.transform.rotation.y},")
+            self.output.append(f"            \"z\": {Callbacks.transform.transform.rotation.z},")
+            self.output.append(f"            \"w\": {Callbacks.transform.transform.rotation.w}")
+            self.output.append("        }")
+            self.output.append("    },")
+            self.output.append("    \"preferred_joint_configuration\": {")
+            self.output.append(f"        \"j0\": {Callbacks.joints.position[0]},")
+            self.output.append(f"        \"j1\": {Callbacks.joints.position[1]},")
+            self.output.append(f"        \"j2\": {Callbacks.joints.position[2]},")
+            self.output.append(f"        \"j3\": {Callbacks.joints.position[3]},")
+            self.output.append(f"        \"j4\": {Callbacks.joints.position[4]},")
+            self.output.append(f"        \"j5\": {Callbacks.joints.position[5]}")
+            self.output.append("    }")
+            self.output.append("}")
+            # self.output.append(json.dumps(str(Callbacks.joints)))
+
+            # self.output.append(json.dumps(str(Callbacks.transform)))
 
         combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
 

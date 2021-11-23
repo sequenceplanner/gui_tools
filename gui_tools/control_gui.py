@@ -149,7 +149,7 @@ class Window(QWidget, Callbacks):
         combo_1 = QComboBox()
         combo_2 = QComboBox()
         combo_3 = QComboBox()
-        combo_3.addItems(["move_j", "move_l", "safe_move_j"])
+        combo_3.addItems(["move_j", "move_l", "safe_move_j", "start_vacuum", "stop_vacuum"])
 
         line_edit_1 = QLineEdit("0.1")
         line_edit_2 = QLineEdit("0.1")
@@ -159,7 +159,7 @@ class Window(QWidget, Callbacks):
 
         combo_1_box_button = QPushButton("refresh")
         combo_1_box_button.setMaximumWidth(280)
-        combo_2_box_button = QPushButton("move")
+        combo_2_box_button = QPushButton("execute")
         combo_2_box_button.setMaximumWidth(280)
         combo_3_box_button = QPushButton("stop")
         combo_3_box_button.setMaximumWidth(280)

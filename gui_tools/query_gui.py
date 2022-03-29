@@ -4,7 +4,7 @@ import rclpy
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
-from tf_tools_msgs.srv import LookupTransform
+from scene_manipulation_msgs.srv import LookupTransform
 from sensor_msgs.msg import JointState
 
 import threading
@@ -58,7 +58,7 @@ class Ros2Node(Node, Callbacks):
             .string_value
         )
 
-        self.tf_lookup_client = self.create_client(LookupTransform, "tf_lookup")
+        self.tf_lookup_client = self.create_client(LookupTransform, "lookup_transform")
         self.tf_lookup_request = LookupTransform.Request()
         self.tf_lookup_response = LookupTransform.Response()
 
@@ -87,9 +87,9 @@ class Ros2Node(Node, Callbacks):
         Callbacks.transform = self.tf_lookup(Callbacks.parent, Callbacks.child)
 
     def tf_lookup(self, parent, child):
-        self.tf_lookup_request.parent_id = parent
-        self.tf_lookup_request.child_id = child
-        self.tf_lookup_request.deadline = 3000
+        self.tf_lookup_request.parent_frame_id = parent
+        self.tf_lookup_request.child_frame_id = child
+        # self.tf_lookup_request.deadline = 3000
         
         future = self.tf_lookup_client.call_async(self.tf_lookup_request)
         self.get_logger().info("tf lookup request sent: %s" % self.tf_lookup_request)
@@ -184,8 +184,8 @@ class Window(QWidget, Callbacks):
             self.output.append("{")
             self.output.append("    \"show\": true,")
             self.output.append("    \"active\": false,")
-            self.output.append(f"    \"child_frame\": \"{Callbacks.child}\",")
-            self.output.append(f"    \"parent_frame\": \"{Callbacks.parent}\",")
+            self.output.append(f"    \"child_frame_id\": \"{Callbacks.child}\",")
+            self.output.append(f"    \"parent_frame_id\": \"{Callbacks.parent}\",")
             self.output.append("    \"transform\": {")
             self.output.append("        \"translation\": {")
             self.output.append(f"            \"x\": {Callbacks.transform.transform.translation.x},")

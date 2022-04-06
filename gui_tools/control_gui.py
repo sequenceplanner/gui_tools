@@ -5,7 +5,7 @@ from rclpy.service import Service
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
-from ur_tools_msgs.action import URScriptControl
+from ur_controller_msgs.action import URControl
 import threading
 import yaml
 from rclpy.action import ActionClient
@@ -45,18 +45,18 @@ class Ros2ActionNode(Node, Callbacks):
         Callbacks.trigger_move_robot = self.trigger_move_robot
         # Callbacks.trigger_stop = self.trigger_stop
 
-        self._ur_control_client = ActionClient(self, URScriptControl, "ur_script_controller")
+        self._ur_control_client = ActionClient(self, URControl, "ur_control")
         self.get_logger().warn("UR Script Controller Server not available, wait...")
         self._ur_control_client.wait_for_server()
         self.get_logger().info("UR Script Controller Server online.")
 
     def trigger_move_robot(self):
-        request = URScriptControl.Goal()
+        request = URControl.Goal()
         request.command = Callbacks.command
         request.acceleration = float(Callbacks.acceleration)
         request.velocity = float(Callbacks.velocity)
-        request.tcp_name = Callbacks.with_tcp
-        request.goal_feature_name = Callbacks.to_target
+        request.tcp_id = Callbacks.with_tcp
+        request.goal_feature_id = Callbacks.to_target
         self.generate_and_send_ur_script(request)
 
     def generate_and_send_ur_script(self, request):
@@ -93,10 +93,10 @@ class Ros2Node(Node, Callbacks):
 
         self._cancel_goal_client = self.create_client(DashboardCommand, "dashboard_command")
         self.get_logger().warn("Dashboard Control Server not available, wait...")
-        self._cancel_goal_client.wait_for_service()
+        # self._cancel_goal_client.wait_for_service()
         self.get_logger().info("Dashboard Control Server online.")
 
-        self.get_logger().info("Control GUI node started.")
+        self.get_logger().warn("Control GUI node started.")
 
     def trigger_refresh(self):
         yaml_file = yaml.safe_load(self.tf_buffer.all_frames_as_yaml())

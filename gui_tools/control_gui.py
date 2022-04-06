@@ -50,6 +50,7 @@ class Ros2ActionNode(Node, Callbacks):
         self._ur_control_client.wait_for_server()
         self.get_logger().info("UR Script Controller Server online.")
 
+
     def trigger_move_robot(self):
         request = URControl.Goal()
         request.command = Callbacks.command

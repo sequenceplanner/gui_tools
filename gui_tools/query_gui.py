@@ -183,7 +183,7 @@ class Window(QWidget, Callbacks):
             Callbacks.trigger_query()
             self.output.append("{")
             self.output.append("    \"show\": true,")
-            self.output.append("    \"active\": false,")
+            self.output.append("    \"active\": true,")
             self.output.append(f"    \"child_frame_id\": \"{Callbacks.child}\",")
             self.output.append(f"    \"parent_frame_id\": \"{Callbacks.parent}\",")
             self.output.append("    \"transform\": {")

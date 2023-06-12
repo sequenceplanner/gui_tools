@@ -61,10 +61,35 @@ class Ros2ActionNode(Node, Callbacks):
         self.generate_and_send_ur_script(request)
 
     def generate_and_send_ur_script(self, request):
-        self._send_goal_future = self._ur_control_client.send_goal_async(request)
+        Callbacks.status.setText("Making request.")
+        Callbacks.feedback.setText("")
+        self._send_goal_future = self._ur_control_client.send_goal_async(request,
+                                                                         feedback_callback=self.feedback_callback)
 
-    # def trigger_stop(self):
-    #     self._send_goal_future.cancel()
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            Callbacks.status.setText("Goal rejected")
+            return
+
+        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future.add_done_callback(self.get_result_callback)
+        Callbacks.status.setText("Goal accepted")
+
+    def get_result_callback(self, future):
+        result = future.result().result
+        if result.success:
+            Callbacks.status.setText("Completed successfully")
+        else:
+            Callbacks.status.setText("Failed.")
+
+    def feedback_callback(self, feedback_msg):
+        Callbacks.feedback.setText(feedback_msg.feedback.current_state)
+
+    def trigger_stop(self):
+        self._send_goal_future.cancel()
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -109,20 +134,12 @@ class Ros2Node(Node, Callbacks):
     def trigger_stop(self):
         request = DashboardCommand.Request()
         request.cmd = "stop"
-        future = self._cancel_goal_client.call_async(request)
         self.get_logger().info(f"Request to stop program execution sent.")
-        while rclpy.ok():
-            rclpy.spin_once(self)
-            if future.done():
-                try:
-                    response = future.result()
-                except Exception as e:
-                    self.get_logger().error(f"Stop program execution call failed with: {(e,)}")
-                else:
-                    self.get_logger().info(f"Stop program execution call succeeded with: {response}")
-                finally:
-                    self.get_logger().info(f"Stop program execution call completed.")
-                break
+        future = self._cancel_goal_client.call_async(request)
+        future.add_done_callback(self.cancel_callback)
+
+    def cancel_callback(self, result):
+        self.get_logger().info('Cancel request: {0}'.format(result))
 
 
 class Window(QWidget, Callbacks):
@@ -133,13 +150,13 @@ class Window(QWidget, Callbacks):
         grid = QGridLayout(self)
         grid.addWidget(self.make_move_robot_box())
         self.setLayout(grid)
-        self.setWindowTitle("Transformations GUI")
-        self.resize(600, 250)
+        self.setWindowTitle("Robot control")
+        self.resize(600, 280)
 
     def make_move_robot_box(self):
         combo_box = QGroupBox("move")
         combo_box.setMinimumWidth(300)
-        combo_box.setMaximumHeight(200)
+        combo_box.setMaximumHeight(250)
 
         combo_box_layout = QGridLayout()
 
@@ -178,6 +195,16 @@ class Window(QWidget, Callbacks):
         combo_box_layout.addWidget(line_edit_1, 3, 1)
         combo_box_layout.addWidget(line_edit_2_label, 4, 0)
         combo_box_layout.addWidget(line_edit_2, 4, 1)
+
+        status = QLabel("Status:")
+        feedback = QLabel("Feedback:")
+        Callbacks.status = QLabel("[no goal]")
+        Callbacks.feedback = QLabel("[no goal]")
+        combo_box_layout.addWidget(status, 5, 0)
+        combo_box_layout.addWidget(Callbacks.status, 5, 1)
+        combo_box_layout.addWidget(feedback, 6, 0)
+        combo_box_layout.addWidget(Callbacks.feedback, 6, 1)
+
         combo_box.setLayout(combo_box_layout)
 
         def combo_1_box_button_clicked():

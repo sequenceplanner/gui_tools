@@ -43,7 +43,7 @@ class Ros2ActionNode(Node, Callbacks):
         Callbacks.__init__(self)
 
         Callbacks.trigger_move_robot = self.trigger_move_robot
-        # Callbacks.trigger_stop = self.trigger_stop
+        Callbacks.trigger_stop = self.trigger_stop
 
         self._ur_control_client = ActionClient(self, URControl, "ur_control")
         self.get_logger().warn("UR Script Controller Server not available, wait...")
@@ -63,18 +63,19 @@ class Ros2ActionNode(Node, Callbacks):
     def generate_and_send_ur_script(self, request):
         Callbacks.status.setText("Making request.")
         Callbacks.feedback.setText("")
+        self.goal_handle = None
         self._send_goal_future = self._ur_control_client.send_goal_async(request,
                                                                          feedback_callback=self.feedback_callback)
 
         self._send_goal_future.add_done_callback(self.goal_response_callback)
 
     def goal_response_callback(self, future):
-        goal_handle = future.result()
-        if not goal_handle.accepted:
+        self.goal_handle = future.result()
+        if not self.goal_handle.accepted:
             Callbacks.status.setText("Goal rejected")
             return
 
-        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future = self.goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
         Callbacks.status.setText("Goal accepted")
 
@@ -85,11 +86,22 @@ class Ros2ActionNode(Node, Callbacks):
         else:
             Callbacks.status.setText("Failed.")
 
+        self.goal_handle = None
+
     def feedback_callback(self, feedback_msg):
         Callbacks.feedback.setText(feedback_msg.feedback.current_state)
 
     def trigger_stop(self):
-        self._send_goal_future.cancel()
+        if not self.goal_handle is None:
+            self.get_logger().warn("Cancelling goal.")
+            Callbacks.status.setText("Cancelling.")
+            self._cancel_goal_future = self.goal_handle.cancel_goal_async()
+            self._cancel_goal_future.add_done_callback(self.cancel_done_callback)
+
+    def cancel_done_callback(self, future):
+        result = future.result().result
+        self.get_logger().info('Cancel request done: {0}'.format(result))
+
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -98,7 +110,7 @@ class Ros2Node(Node, Callbacks):
 
         Callbacks.trigger_refresh = self.trigger_refresh
         Callbacks.trigger_stop_robot = self.trigger_stop_robot
-        Callbacks.trigger_stop = self.trigger_stop
+        # Callbacks.trigger_stop = self.trigger_stop
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -131,15 +143,15 @@ class Ros2Node(Node, Callbacks):
             Callbacks.frames.append(i)
         Callbacks.frames.sort()
 
-    def trigger_stop(self):
-        request = DashboardCommand.Request()
-        request.cmd = "stop"
-        self.get_logger().info(f"Request to stop program execution sent.")
-        future = self._cancel_goal_client.call_async(request)
-        future.add_done_callback(self.cancel_callback)
+    # def trigger_stop(self):
+    #     request = DashboardCommand.Request()
+    #     request.cmd = "stop"
+    #     self.get_logger().info(f"Request to stop program execution sent.")
+    #     future = self._cancel_goal_client.call_async(request)
+    #     future.add_done_callback(self.cancel_callback)
 
-    def cancel_callback(self, result):
-        self.get_logger().info('Cancel request: {0}'.format(result))
+    # def cancel_callback(self, result):
+    #     self.get_logger().info('Cancel request: {0}'.format(result))
 
 
 class Window(QWidget, Callbacks):

@@ -12,6 +12,7 @@ from rclpy.action import ActionClient
 from action_msgs.srv import CancelGoal
 from ur_script_msgs.srv import DashboardCommand
 from rclpy.executors import MultiThreadedExecutor
+from sensor_msgs.msg import JointState
 
 import rclpy
 from rclpy.node import Node
@@ -36,6 +37,8 @@ class Callbacks:
     trigger_move_robot = None
     trigger_stop_robot = None
     trigger_stop = None
+    trigger_ghost = None
+    ghost_joints = None
 
 class Ros2ActionNode(Node, Callbacks):
     def __init__(self):
@@ -43,6 +46,7 @@ class Ros2ActionNode(Node, Callbacks):
         Callbacks.__init__(self)
 
         Callbacks.trigger_move_robot = self.trigger_move_robot
+        Callbacks.trigger_ghost = self.trigger_ghost
         Callbacks.trigger_stop = self.trigger_stop
 
         self._ur_control_client = ActionClient(self, URControl, "ur_control")
@@ -58,6 +62,20 @@ class Ros2ActionNode(Node, Callbacks):
         request.velocity = float(Callbacks.velocity)
         request.tcp_id = Callbacks.with_tcp
         request.goal_feature_id = Callbacks.to_target
+        self.generate_and_send_ur_script(request)
+
+    def trigger_ghost(self):
+        if Callbacks.ghost_joints is None:
+            return
+
+        request = URControl.Goal()
+        request.command = Callbacks.command
+        request.acceleration = float(Callbacks.acceleration)
+        request.velocity = float(Callbacks.velocity)
+        request.use_joint_positions = True
+        request.joint_positions = JointState()
+        request.joint_positions.position = Callbacks.ghost_joints
+
         self.generate_and_send_ur_script(request)
 
     def generate_and_send_ur_script(self, request):
@@ -109,8 +127,6 @@ class Ros2Node(Node, Callbacks):
         Callbacks.__init__(self)
 
         Callbacks.trigger_refresh = self.trigger_refresh
-        Callbacks.trigger_stop_robot = self.trigger_stop_robot
-        # Callbacks.trigger_stop = self.trigger_stop
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -129,6 +145,14 @@ class Ros2Node(Node, Callbacks):
             self.get_parameter("scenario").get_parameter_value().string_value
         )
 
+        self.ghost_sub = self.create_subscription(
+            JointState,
+            '/ghost/joint_states',
+            self.ghost_sub_callback,
+            10)
+
+        self.get_logger().info("Query gui up and running.")
+
         self._cancel_goal_client = self.create_client(DashboardCommand, "dashboard_command")
         self.get_logger().warn("Dashboard Control Server not available, wait...")
         # self._cancel_goal_client.wait_for_service()
@@ -136,22 +160,15 @@ class Ros2Node(Node, Callbacks):
 
         self.get_logger().warn("Control GUI node started.")
 
+    def ghost_sub_callback(self, msg):
+        Callbacks.ghost_joints = msg.position
+
     def trigger_refresh(self):
         yaml_file = yaml.safe_load(self.tf_buffer.all_frames_as_yaml())
         Callbacks.frames.clear()
         for i in yaml_file.keys():
             Callbacks.frames.append(i)
         Callbacks.frames.sort()
-
-    # def trigger_stop(self):
-    #     request = DashboardCommand.Request()
-    #     request.cmd = "stop"
-    #     self.get_logger().info(f"Request to stop program execution sent.")
-    #     future = self._cancel_goal_client.call_async(request)
-    #     future.add_done_callback(self.cancel_callback)
-
-    # def cancel_callback(self, result):
-    #     self.get_logger().info('Cancel request: {0}'.format(result))
 
 
 class Window(QWidget, Callbacks):
@@ -193,6 +210,9 @@ class Window(QWidget, Callbacks):
         combo_2_box_button.setMaximumWidth(280)
         combo_3_box_button = QPushButton("stop")
         combo_3_box_button.setMaximumWidth(280)
+        combo_4_box_button = QPushButton("match ghost")
+        combo_4_box_button.setMaximumWidth(280)
+
 
         combo_box_layout.addWidget(combo_1_box_label, 0, 0)
         combo_box_layout.addWidget(combo_1, 0, 1)
@@ -205,6 +225,7 @@ class Window(QWidget, Callbacks):
         combo_box_layout.addWidget(combo_3_box_button, 2, 2)
         combo_box_layout.addWidget(line_edit_1_label, 3, 0)
         combo_box_layout.addWidget(line_edit_1, 3, 1)
+        combo_box_layout.addWidget(combo_4_box_button, 3, 2)
         combo_box_layout.addWidget(line_edit_2_label, 4, 0)
         combo_box_layout.addWidget(line_edit_2, 4, 1)
 
@@ -244,6 +265,15 @@ class Window(QWidget, Callbacks):
             # self.output.append(Callbacks.information)
 
         combo_3_box_button.clicked.connect(combo_3_box_button_clicked)
+
+        def combo_4_box_button_clicked():
+            Callbacks.command = combo_3.currentText()
+            Callbacks.velocity = line_edit_1.text()
+            Callbacks.acceleration = line_edit_2.text()
+            Callbacks.trigger_ghost()
+            # self.output.append(Callbacks.information)
+
+        combo_4_box_button.clicked.connect(combo_4_box_button_clicked)
 
         return combo_box
 
